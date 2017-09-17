@@ -1,3 +1,4 @@
+# coaster.jl
 const air_density = .0029  #-- density of air (ld/ft^3)
 const gravity = 32.     #force of gravity on earth (ft/sec^2)
 const runner_friction = .006  #-- friction coef of runner wheels on track (null)
