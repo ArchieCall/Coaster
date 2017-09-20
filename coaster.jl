@@ -2,6 +2,10 @@
 # 09/19/2017
 #=
 Computes forces on multihill roller coaster
+TODO:
+g force perpendicular to track
+runner friction
+
 =#
 module RollerCoaster
 const MassDensityAir = .0029  #-- density of air [ld/ft^3]
@@ -79,11 +83,17 @@ function Forces(x_index::Int, Vel::Float64)
   if slope < 0.
     SlopeSign = 1.
   end
-  GravityFraction = abs(slope) / sqrt(slope^2 + 1.)
-  GravPounds = CstrPounds * (GravityFraction * SlopeSign) #-- must reverse sign of slope
+  WeightFraction = abs(slope) / sqrt(slope^2 + 1.)
+  WeightFraction1 = sind(atand(slope))
+  if !isapprox(abs(WeightFraction), abs(WeightFraction1))
+    @show(slope)
+    error("unequal fractions")
+  end
+
+  ScaledCstrPounds = CstrPounds * (WeightFraction * SlopeSign) #-- must reverse sign of slope
   WindPounds = CfWindFr * FrontalArea * .5 * MassDensityAir * Vel * Vel
-  NetPoundForce = GravPounds - WindPounds  #-- net pound force of coaster in direction of travel
-  #@show(slope, GravPounds, WindPounds, NetPoundForce)
+  NetPoundForce = ScaledCstrPounds - WindPounds  #-- net pound force of coaster in direction of travel
+  #@show(slope, ScaledCstrPounds, WindPounds, NetPoundForce)
   Acc = NetPoundForce / (CstrPounds / GravityConstant)  #-- acceleration of coaster
   NewVel = sqrt(Vel^2 +(2. * Acc * Distance ))
   #@show(Distance, NewVel)
@@ -91,8 +101,8 @@ function Forces(x_index::Int, Vel::Float64)
   return Acc, TravelTime, Distance, NewVel
 end
 
-BeginVel = 5.0
-BeginXFt = 320
+BeginVel = 25.0
+BeginXFt = 290
 EndXFt = 500
 BeginPoint = BeginXFt * 10
 EndPoint = EndXFt * 10
