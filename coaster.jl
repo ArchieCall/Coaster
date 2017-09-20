@@ -1,19 +1,19 @@
 # coaster.jl
-# 09/19/2017
+# 09/20/2017
 #=
 Computes forces on multihill roller coaster
 TODO:
+on uphill if not enough speed then gracefully exit rather than neg sqrt
 g force perpendicular to track
-runner friction
+runner friction - g force above
 
 =#
 module RollerCoaster
 const MassDensityAir = .0029  #-- density of air [ld/ft^3]
 const GravityConstant = 32.      #-- force of gravity on earth [ft/sec^2]
-const CfWindFr = .65     #-- coef of wind friction on coaster front [coef]
-#const CfWindFr = 0.     #-- coef of wind friction on coaster front [coef]
-const FrontalArea = 22.  #-- front area of coaster [ft^2]
-const runner_friction = .006  #-- friction coef of runner wheels on track (null)
+const CfWindFr = .10     #-- coef of wind friction on coaster front [coef]
+const FrontalArea = 10.  #-- front area of coaster [ft^2]
+const CfRunnerFriction = .01  #-- friction coef of runner wheels on track (null)
 const CstrPounds = 2_000.  #-- weight of whole coaster and riders (lb)
 const NumHills = 3  #-- number of hills on the track
 #=
@@ -22,9 +22,9 @@ const NumHills = 3  #-- number of hills on the track
 . hills begin and end at zero elevation 
 =#
 HillHeight = Array{Float64}(NumHills) #-- vertical height of hill
-HillHeight = [300, 150, 100]
+HillHeight = [520, 150, 100]
 HillLength = Array{Float64}(NumHills) #-- horizontal length of hill
-HillLength = [600, 150, 100]
+HillLength = [300, 150, 100]
 
 CoasterLengthFt = sum(HillLength)
 CoasterLengthIn = CoasterLengthFt * 10
@@ -78,32 +78,28 @@ function Forces(x_index::Int, Vel::Float64)
   slope = SlopeC[x_index]    #-- + slope => going uphill, - slope => going downhill
   
   #-- pound forces on coaster in direction of travel
-  #GravPounds = GravityConstant * (slope * -1.) #-- must reverse sign of slope
-  SlopeSign = -1.
-  if slope < 0.
-    SlopeSign = 1.
-  end
-  WeightFraction = abs(slope) / sqrt(slope^2 + 1.)
-  WeightFraction1 = sind(atand(slope))
-  if !isapprox(abs(WeightFraction), abs(WeightFraction1))
-    @show(slope)
-    error("unequal fractions")
-  end
-
-  ScaledCstrPounds = CstrPounds * (WeightFraction * SlopeSign) #-- must reverse sign of slope
-  WindPounds = CfWindFr * FrontalArea * .5 * MassDensityAir * Vel * Vel
-  NetPoundForce = ScaledCstrPounds - WindPounds  #-- net pound force of coaster in direction of travel
-  #@show(slope, ScaledCstrPounds, WindPounds, NetPoundForce)
+  PullFraction = -sind(atand(slope))  #-- fraction of gravity along track
+  WheelFraction = abs(cosd(atand(slope))) #-- fraction of wheel weight perpendicular to track
+  CstrPullPounds = CstrPounds * PullFraction   #-- coaster pull along track
+  WindPounds = CfWindFr * FrontalArea * .5 * MassDensityAir * Vel * Vel  #-- wind resistance
+  WheelFrictionPounds = CstrPounds * WheelFraction * CfRunnerFriction  #-- wheel friction
+  NetPoundForce = CstrPullPounds - WindPounds - WheelFrictionPounds  #-- net pound force of coaster
+  @show(slope, CstrPullPounds, WindPounds, WheelFrictionPounds, NetPoundForce)
   Acc = NetPoundForce / (CstrPounds / GravityConstant)  #-- acceleration of coaster
-  NewVel = sqrt(Vel^2 +(2. * Acc * Distance ))
+  InsideSqrt = Vel^2 +(2. * Acc * Distance )
+  if InsideSqrt < 0.
+    error("Error velocity on uphill reached zero!")
+  end
+  NewVel = sqrt(InsideSqrt)
+  @show(x_index / 10., slope, Acc, InsideSqrt, NewVel * 60./88., Distance)
   #@show(Distance, NewVel)
   TravelTime = (2. * Distance) / (Vel + NewVel)  #-- time to travel from this point to next point
   return Acc, TravelTime, Distance, NewVel
 end
 
-BeginVel = 25.0
-BeginXFt = 290
-EndXFt = 500
+BeginVel = 120.0
+BeginXFt = 151
+EndXFt = 299
 BeginPoint = BeginXFt * 10
 EndPoint = EndXFt * 10
 NewVel = BeginVel
@@ -126,5 +122,5 @@ end
 SkipCode = true
 if !SkipCode
 end
-println("done")
+println("Griffin's roller coaster program is done.")
 end
