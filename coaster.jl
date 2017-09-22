@@ -1,50 +1,54 @@
 # coaster.jl
-# 09/21/2017
+# 09/22/2017
 #=
 Computes forces on multihill roller coaster
 TODO:
-process multiple hills properly
-radius between two line segments
 angular momentum on track and associated runner friction
 computer summary stats by each uphill and downhill
-loops
-twists
+loops in track
+twists in track
 =#
 module RollerCoaster
-const MassDensityAir = .0029  #-- density of air [ld/ft^3]
-const GravityConstant = 32.      #-- force of gravity on earth [ft/sec^2]
-const CfWindFr = .30     #-- coef of wind friction on coaster front [coef]
-const FrontalArea = 15.  #-- front area of coaster [ft^2]
-const CfRunnerFriction = .01  #-- friction coef of runner wheels on track (null)
-const CstrPounds = 10_000.  #-- weight of all coaster cars and riders (lb)
-const NumHills = 3  #-- number of hills on the track
+const MassDensityAir = .0029   #-- density of air [ld/ft^3]
+const GravityConstant = 32.    #-- force of gravity on earth [ft/sec^2]
+const CfWindFr = .30           #-- coef of wind friction on coaster front [coef]
+const FrontalArea = 15.        #-- front area of coaster [ft^2]
+const CfRunnerFriction = .01   #-- friction coef of runner wheels on track (null)
+const CstrLbs = 10_000.        #-- weight of coaster cars and riders (lb)
+const NumHills = 3             #-- number of hills on the track 
+const SegsPerFt = 10           #-- number of segments per foot of horizontal distance
 #=
 . hills are symmetric left and right
 . hills begin and end at zero elevation 
 =#
-HillHeight = Array{Float64}(NumHills) #-- vertical height of hill
-HillHeight = [300, 150, 100]
-HillLength = Array{Float64}(NumHills) #-- horizontal length of hill
-HillLength = [300, 150, 100]
 
-Offset = Array{Int}(NumHills) #-- beginning inc offset of a hill
+#-- setup the hill lengths and heights
+HillHeight = Array{Int}(NumHills) #-- vertical height of each hill
+HillHeight = [300, 150, 100]
+HillLength = Array{Int}(NumHills) #-- horizontal length of each hill
+HillLength = [2000, 150, 100]
+
+#-- setup the offset array
+Offset = zeros(Int, NumHills) #-- beginning offset of a hill in segments
 Offset[1] = 0
 for o = 2:NumHills
-  Offset[o] = Offset[o-1] + (HillLength[o-1] * 10)
+  Offset[o] = Offset[o-1] + (HillLength[o-1] * SegsPerFt)
 end
 @show(Offset)
 
+CoasterLengthFt = sum(HillLength)   #-- total length of all hills in coaster [ft]
+CoasterLengthSegs = CoasterLengthFt * SegsPerFt  #-- ditto [segments]
 
-CoasterLengthFt = sum(HillLength)
-CoasterLengthIn = CoasterLengthFt * 10
-XC = Array{Float64}(CoasterLengthIn)
-YC = Array{Float64}(CoasterLengthIn)
-SlopeSegment = Array{Float64}(CoasterLengthIn)
-RadiusSegment = Array{Float64}(CoasterLengthIn)
+#-- create XC, YC, SlopeSegment, RadiusSegment float arrays
+XC = Array{Float64}(CoasterLengthSegs)
+YC = Array{Float64}(CoasterLengthSegs)
+SlopeSegment = Array{Float64}(CoasterLengthSegs)
+RadiusSegment = Array{Float64}(CoasterLengthSegs)
+
 # fill the x values of XC
 for i = 1:CoasterLengthFt
-  for j = 1:10
-    k = (i-1) * 10 + j
+  for j = 1:SegsPerFt
+    k = (i-1) * SegsPerFt + j
     kx = k * 1.
     XC[k] = kx * .1
   end
@@ -53,21 +57,21 @@ end
 # calc the y values of the hills (YC)
 Counter = 0
 for h = 1:NumHills  #-- loop over each hill
-  DegInc = 360. / (HillLength[h] * 10.)
+  DegInc = 360. / (HillLength[h] * SegsPerFt)
   DegInitial = -90.
   HH = HillHeight[h]
   IncsOffset = Offset[h]
   for i = 1:HillLength[h]
-    for j = 1:10
-      k = (i-1) * 10 + j + IncsOffset
-      HillAng = DegInitial + (DegInc * (k - 1))
+    for j = 1:SegsPerFt    #-- gen the sine wave segments
+      k = (i-1) * SegsPerFt + j + IncsOffset    #-- gen the segment num
+      HillAng = DegInitial + (DegInc * (k - 1))  #-- ang of sine wave
       SinAng = sind(HillAng)
       if SinAng >= 0.
-        VPos = (.5 * HH) + (.5 * HH * SinAng)
+        VPos = (.5 * HH) + (.5 * HH * SinAng)  #-- upper portion of wave
       else
-        VPos = abs(.5 * HH * (1. + SinAng))
+        VPos = abs(.5 * HH * (1. + SinAng))    #-- lower portion of wave
       end
-      YC[k] = VPos
+      YC[k] = VPos  #-- store the y coor
       Counter += 1
     end
   end
@@ -76,10 +80,34 @@ end
 
 #-- calc the slope vector
 for k = 1:Counter - 1
-  SlopeSegment[k] = (YC[k+1] - YC[k] ) / (XC[k+1] - XC[k])
+  # if uphill slope is positive, if downhill slope is negative
+  SlopeSegment[k] = (YC[k+1] - YC[k] ) / (XC[k+1] - XC[k])  #-- slope of this segment
   #@printf("x => %8.4f  y => %8.4f   slope => %9.5f\n", XC[k], YC[k], SlopeSegment[k])
 end
 
+#-- get radius of curved track based on three adjacent segments
+function CalcCenter(p1x::Float64, p1y::Float64, p2x::Float64, p2y::Float64,
+  p3x::Float64, p3y::Float64)
+  ma = (p2y - p1y) / (p2x - p1x)
+  mb = (p3y - p2y) / (p3x - p2x)
+  centerx = (ma * mb * (p1y - p3y) + mb * (p1x + p2x) - ma * (p2x + p3x)) / (2 * (mb - ma))
+  centery = (-1 / ma) * (centerx - (p1x + p2x) / 2) + (p1y + p2y) / 2
+  radius = sqrt((centerx - p1x)^2 + (centery - p1y)^2)
+  return radius
+end
+
+#-- calc the radius vector
+for k = 2:Counter-1
+  p1x = XC[k-1]
+  p1y = YC[k-1]
+  p2x = XC[k]
+  p2y = YC[k]
+  p3x = XC[k+1]
+  p3y = YC[k+1]
+  RadiusSegment[k] = CalcCenter(p1x, p1y, p2x, p2y, p3x, p3y)
+end
+
+#-- calc all forces on coaster at specific segment
 function Forces(x_index::Int, Vel::Float64)
   println(" ")
   x = XC[x_index]  #-- x coor of this point
@@ -90,32 +118,51 @@ function Forces(x_index::Int, Vel::Float64)
   Distance =  sqrt((x_next - x)^2 + (y_next - y)^2)  #-- dist from this point to next point
   slope = SlopeSegment[x_index]    #-- + slope => going uphill, - slope => going downhill
   
-  #-- pound forces on coaster in direction of travel
-  PullFraction = -sind(atand(slope))  #-- fraction of gravity along track
-  WheelFraction = abs(cosd(atand(slope))) #-- fraction of wheel weight perpendicular to track
-  @show(PullFraction, WheelFraction)
-  CstrPullPounds = CstrPounds * PullFraction   #-- coaster pull along track
-  WindPounds = CfWindFr * FrontalArea * .5 * MassDensityAir * Vel * Vel  #-- wind resistance
-  WheelFrictionPounds = CstrPounds * WheelFraction * CfRunnerFriction  #-- wheel friction
-  NetPoundForce = CstrPullPounds - WindPounds - WheelFrictionPounds  #-- net pound force of coaster
-  @show(slope, CstrPullPounds, WindPounds, WheelFrictionPounds, NetPoundForce)
-  Acc = NetPoundForce / (CstrPounds / GravityConstant)  #-- acceleration of coaster
+  #-- coaster pounds parallel to direction of travel
+  TrackPullLbs = -sind(atand(slope)) * CstrLbs
+  
+  #-- weight of coaster perpendicular to track - assumes track is straight
+  WheelLbs = abs(cosd(atand(slope))) * CstrLbs
+  
+  #-- added or reduced wheel pounds from centrifugal force on curved track
+  CentrifugalWheelLbs = (CstrLbs / GravityConstant) * Vel * Vel / RadiusSegment[x_index]
+  if slope > 0. && slope < 1.
+    CentrifugalSign = -1    #-- centrifugal force applied to bottom of coaster rail
+  elseif  slope < 0. && slope > -1.
+    CentrifugalSign = -1    #-- centrifugal force applied to bottom of coaster rail
+  else
+    CentrifugalSign = 1     #-- centrifugal force applied to top of coaster rail
+  end
+  
+  TotalWheelLbs = abs(WheelLbs + (CentrifugalWheelLbs * CentrifugalSign))
+  WheelFrictionLbs = TotalWheelLbs * CfRunnerFriction   #-- wheel friction
+  
+  #-- wind resistance of coaster
+  WindFrictionLbs = CfWindFr * FrontalArea * .5 * MassDensityAir * Vel * Vel  
+  
+  #-- net force that accelerates the coaster
+  NetLbs = TrackPullLbs - WindFrictionLbs - WheelFrictionLbs
+  
+  @show(slope, TrackPullLbs, WindFrictionLbs, WheelFrictionLbs, NetLbs, RadiusSegment[x_index])
+  
+  Acc = NetLbs / (CstrLbs / GravityConstant)  #-- acceleration of coaster
+  
   InsideSqrt = Vel^2 +(2. * Acc * Distance )
   if InsideSqrt < 0.
     error("Error velocity on uphill reached zero!")
   end
   NewVel = sqrt(InsideSqrt)
-  @show(x_index / 10., slope, Acc, InsideSqrt, NewVel * 60./88., Distance)
-  #@show(Distance, NewVel)
+  @show(x_index / SegsPerFt, slope, Acc, NewVel * 60./88., Distance)
   TravelTime = (2. * Distance) / (Vel + NewVel)  #-- time to travel from this point to next point
   return Acc, TravelTime, Distance, NewVel
 end
 
-BeginVel = 50.0
-BeginXFt = 151
-EndXFt = 549
-BeginPoint = BeginXFt * 10
-EndPoint = EndXFt * 10
+#--- run the simulation of roller coaster
+BeginXFt = 1001     #-- beginning hor coor
+EndXFt =   1010       #-- ending hor coor
+BeginVel = 50.0    #-- initial velocity at beginning coor
+BeginPoint = BeginXFt * SegsPerFt  #-- beginning point in segments
+EndPoint = EndXFt * SegsPerFt      #-- ending point in segments
 NewVel = BeginVel
 TotDistance = 0.
 TotTime = 0.
