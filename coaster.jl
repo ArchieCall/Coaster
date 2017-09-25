@@ -1,9 +1,10 @@
 # coaster.jl
-# 09/23/2017
+# 09/25/2017
 #=
 Computes forces on multihill roller coaster
 TODO:
-slope possibly calculates wrong at transition from one hill to next
+change hill to semi circles instead of sine wave
+seems that the radius is too small ie.  2.+ ft at bottom and top of hill
 why is centrifugal force so high at bottom of sine hill
 computer summary stats by each uphill and downhill
 loops in track
@@ -12,12 +13,15 @@ twists in track
 module RollerCoaster
 const MassDensityAir = .0029   #-- density of air [ld/ft^3]
 const GravityConstant = 32.    #-- force of gravity on earth [ft/sec^2]
-const CfWindFr = .450          #-- coef of wind friction on coaster front [coef]
-const FrontalArea = 8.        #-- front area of coaster [ft^2]
+const CfWindFr = .60           #-- coef of wind friction on coaster front [coef]
+const FrontalArea = 15.        #-- front area of coaster [ft^2]
 const CfRunnerFriction = .015  #-- friction coef of runner wheels on track (null)
-const CstrLbs = 200.        #-- weight of coaster cars and riders (lb)
+const CstrLbs = 2000.          #-- weight of coaster cars and riders (lb)
 const NumHills = 2             #-- number of hills on the track 
 const SegsPerFt = 10           #-- number of segments per foot of horizontal distance
+const WheelBaseFt = 8          #-- wheel base of coaster car must be integer
+const WheelBaseSegments = WheelBaseFt * SegsPerFt  #-- segments in wheel base
+const WheelBaseSegmentsHalf = Int(WheelBaseSegments * .5)  #-- one half wheel base
 
 #=
 . hills are symmetric left and right
@@ -26,9 +30,9 @@ const SegsPerFt = 10           #-- number of segments per foot of horizontal dis
 
 #-- setup the hill lengths and heights
 HillHeight = Array{Int}(NumHills) #-- vertical height of each hill
-HillHeight = [10, 10]
+HillHeight = [200, 100]
 HillLength = Array{Int}(NumHills) #-- horizontal length of each hill
-HillLength = [20, 20]
+HillLength = [400, 200]
 
 #-- setup the offset array
 Offset = zeros(Int, NumHills) #-- beginning offset of a hill in segments
@@ -51,37 +55,108 @@ RadiusSegment = Array{Float64}(CoasterLengthSegs)
 for i = 1:CoasterLengthFt
   for j = 1:SegsPerFt
     k = (i-1) * SegsPerFt + j
-    kx = k * 1.
-    XC[k] = kx * .1
+    XC[k] =  (k-1) / SegsPerFt
   end
 end
 
 # calc the y values of the hills (YC)
 Counter = 0
-for h = 1:NumHills  #-- loop over each hill
-  DegInc = 360. / (HillLength[h] * SegsPerFt)
-  DegInitial = -90.
-  HH = HillHeight[h]
-  IncsOffset = Offset[h]
-  for i = 1:HillLength[h]
-    for j = 1:SegsPerFt    #-- gen the sine wave segments
-      k = (i-1) * SegsPerFt + j + IncsOffset    #-- gen the segment num
-      HillAng = DegInitial + (DegInc * (k - 1))  #-- ang of sine wave
-      SinAng = sind(HillAng)
-      if SinAng >= 0.
-        VPos = (.5 * HH) + (.5 * HH * SinAng)  #-- upper portion of sine wave
-      else
-        VPos = abs(.5 * HH * (1. + SinAng))    #-- lower portion of sine wave
+
+DoSineWave = false
+if DoSineWave 
+  for h = 1:NumHills  #-- loop over each hill
+    DegInc = 360. / (HillLength[h] * SegsPerFt)
+    DegInitial = -90.
+    HH = HillHeight[h]
+    IncsOffset = Offset[h]
+    for i = 1:HillLength[h]
+      for j = 1:SegsPerFt    #-- gen the sine wave segments
+        k = (i-1) * SegsPerFt + j + IncsOffset    #-- gen the segment num
+        HillAng = DegInitial + (DegInc * (k - 1))  #-- ang of sine wave
+        SinAng = sind(HillAng)
+        if SinAng >= 0.
+          VPos = (.5 * HH) + (.5 * HH * SinAng)  #-- upper portion of sine wave
+        else
+          VPos = abs(.5 * HH * (1. + SinAng))    #-- lower portion of sine wave
+        end
+        YC[k] = VPos  #-- store the y coor
+        Counter += 1
       end
-      YC[k] = VPos  #-- store the y coor
-      Counter += 1
     end
   end
 end
+
+DoCircle = true
+if DoCircle
+  for h = 1:NumHills  #-- loop over each hill
+    @printf("Hill = %3i\n", h)
+    RadCirc = HillHeight[h] / 2
+    RadCircInt = Int(HillHeight[h] / 2)
+    SemiCircSegs = RadCircInt * SegsPerFt    #-- number of segments in the radius
+    ycen = RadCirc * 1.                      #-- y center the same in all quadrants
+    fuzz = .00000001
+    
+    #-- uphill lower quadrant
+    println("got to uphill lower")
+    xcen = (Offset[h] / SegsPerFt) * 1. 
+    for i = 1:SemiCircSegs
+      Counter += 1
+      k = Offset[h] + i     #-- in segs
+      x = XC[k]
+      sqval = RadCirc^2 - (x - xcen)^2 + fuzz
+      y = ycen - sqrt(sqval)
+      YC[k] = y
+      #@show(k, RadCirc, x, xcen, y, ycen, sqval)
+      #error("stop at first uphill")
+    end
+    
+    #-- uphill upper quadrant
+    println("got to uphill upper")
+    xcen = (Offset[h] / SegsPerFt) * 1. + (2. * RadCirc)
+    for i = 1:SemiCircSegs
+      Counter += 1
+      k = Offset[h] + (RadCircInt * SegsPerFt) + i
+      x = XC[k]
+      juu = RadCirc^2 - (x - xcen)^2 + fuzz
+      #@show(k, RadCirc, x, xcen)
+      #@show(juu)
+      y = sqrt(juu) + ycen
+      #error("uuu")
+      YC[k] = y
+    end
+    
+    #-- downhill upper quadrant
+    println("got to downhill upper")
+    xcen = (Offset[h] / SegsPerFt) * 1. + (2. * RadCirc)
+    for i = 1:SemiCircSegs
+      Counter += 1
+      k = Offset[h] + (2 * RadCircInt * SegsPerFt) + i
+      x = XC[k]
+      #@show(k, RadCirc, x, xcen)
+      y = sqrt(RadCirc^2 - (x - xcen)^2 + fuzz) + ycen
+      YC[k] = y
+    end
+    
+    #-- downhill lower quadrant
+    println("got to downhill lower")
+    xcen = (Offset[h] / SegsPerFt) * 1. + (4. * RadCirc)
+    for i = 1:SemiCircSegs
+      Counter += 1
+      k = Offset[h] + (3 * RadCircInt * SegsPerFt) + i
+      x = XC[k]
+      #@show(k, RadCirc, x, xcen)
+      y = -sqrt(RadCirc^2 - (x - xcen)^2 + fuzz) + ycen
+      YC[k] = y
+    end
+  end
+end
+
+
+
 @show(Counter)
 
-#-- calc the slope vector
-for k = 1:Counter - 1
+#-- calc the slope vector based on adjacent segments
+for k = 1:Counter-1
   # if uphill - slope is positive, if downhill - slope is negative
   SlopeSegment[k] = (YC[k+1] - YC[k] ) / (XC[k+1] - XC[k])  #-- slope of this segment
   #@printf("x => %8.4f  y => %8.4f   slope => %9.5f\n", XC[k], YC[k], SlopeSegment[k])
@@ -131,17 +206,28 @@ for k = 2:Counter-1
   p2y = YC[k]
   p3x = XC[k+1]
   p3y = YC[k+1]
-  #RadiusSegment[k] = CalcCenter(p1x, p1y, p2x, p2y, p3x, p3y)
   RadiusSegment[k] = CalcCenter1(p1x, p1y, p2x, p2y, p3x, p3y)
 end
 
-#=
-for i = 1:Counter-1
+#-- recalc radius at center of wheelbase based on backward and forward wheels
+for k = WheelBaseSegmentsHalf+1:Counter-WheelBaseSegmentsHalf
+  l = k - WheelBaseSegmentsHalf
+  m = l + WheelBaseSegments - 1
+  p1x = XC[l]
+  p1y = YC[l]
+  p2x = XC[k]
+  p2y = YC[k]
+  p3x = XC[m]
+  p3y = YC[m]
+  RadiusSegment[k] = CalcCenter1(p1x, p1y, p2x, p2y, p3x, p3y)
+  #@printf("x => %8.4f  y => %8.4f   slope => %9.5f\n", XC[k], YC[k], SlopeSegment[k])
+end
+
+for i = 1:10:4000
   @printf("x = %8.3f y = %8.3f slope = %8.3f radius = %8.3f\n", 
   XC[i], YC[i], SlopeSegment[i], RadiusSegment[i])
 end
-error("stopper")
-=#
+#error("stopper")
 
 ShowCounter = 0
 #-- calc all forces on coaster at specific segment
@@ -163,7 +249,8 @@ function Forces(x_index::Int, Vel::Float64, ShowOutput::Bool)
   WheelLbs = abs(cosd(atand(slope))) * CstrLbs
   
   #-- added or reduced wheel pounds from centrifugal force on a curved track
-  CentrifugalWheelLbs1 = (CstrLbs / GravityConstant) * Vel * Vel / RadiusSegment[x_index]
+  RadiusTrack = RadiusSegment[x_index] + 20.   #-- add 20 ft to debug high g force at bottom
+  CentrifugalWheelLbs1 = (CstrLbs / GravityConstant) * Vel * Vel / RadiusTrack
   if slope > 0. && slope < 1.
     CentrifugalSign = -1    #-- centrifugal force applied to bottom of coaster rail
   elseif  slope < 0. && slope > -1.
@@ -202,16 +289,16 @@ function Forces(x_index::Int, Vel::Float64, ShowOutput::Bool)
 end
 
 #--- run the simulation of roller coaster
-BeginXFt = 10     #-- beginning hor coor
-EndXFt =   39       #-- ending hor coor
+BeginXFt = 200     #-- beginning hor coor
+EndXFt =   590       #-- ending hor coor
 BeginVel = 10.0    #-- initial velocity at beginning coor
 BeginPoint = BeginXFt * SegsPerFt  #-- beginning point in segments
 EndPoint = EndXFt * SegsPerFt      #-- ending point in segments
 NewVel = BeginVel
 TotDistance = 0.
 TotTime = 0.
-const StatsBeg = 10  #-- feet when stat begin
-const StatsFt = 1   #-- show stats when coaster travels this many ft
+const StatsBeg = 200  #-- feet when stats begin
+const StatsFt = 5   #-- show stats when coaster travels this many ft
 const ShowLimit = StatsFt * SegsPerFt
 ShowCounter = ShowLimit
 for l = BeginPoint:EndPoint
