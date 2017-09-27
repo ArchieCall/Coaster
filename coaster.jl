@@ -1,5 +1,6 @@
 # coaster.jl
 # 09/26/2017
+
 #=
 Computes forces on multihill roller coaster
 TODO:
@@ -28,15 +29,14 @@ EndXC::Float64   -- end x coor [ft]
 EndYC::Float64   -- end y coor [ft]
 ----------------------------------------------------
 segments correspond to 
-everything is arcs -> there are not straight lines
-all arcs start from ArcNumber 1 and proceed to ArcNumber n
-Radius is always known and under tight control not to be less than a certain limit
+everything is arcs -> there , are not straight lines
 XCenter and YCenter are specified on first arc, and imputed thereafter
-compute the ArcLength from beg ang to end ang for a given radius
-.. NumArcSegs = max( 1, round(Int, ArcLength * SegsPerFt) - 1)
-.. DegInc = (EndAng - BegAng) / NumArcSegs
-
+ppNumArcSegs = max( 1, round(Int, ArcLength * SegsPerFt) - 1)
+wwDegInc = (EndAng - BegAng) / NumArcSegs
 =#
+
+
+
 module RollerCoaster
 const MassDensityAir = .0029   #-- density of air [ld/ft^3]
 const GravityConstant = 32.    #-- force of gravity on earth [ft/sec^2]
@@ -59,7 +59,7 @@ const WheelBaseSegmentsHalf = Int(WheelBaseSegments * .5)  #-- one half wheel ba
 HillHeight = Array{Int}(NumHills) #-- vertical height of each hill
 HillHeight = [200, 150, 100]
 HillLength = Array{Int}(NumHills) #-- horizontal length of each hill
-HillLength = [400, 300, 200 ]
+HillLength = [400, 300, 200]
 
 #-- setup the offset array
 Offset = zeros(Int, NumHills) #-- beginning offset of a hill in segments
@@ -77,6 +77,89 @@ XC = Array{Float64}(CoasterLengthSegs)
 YC = Array{Float64}(CoasterLengthSegs)
 SlopeSegment = Array{Float64}(CoasterLengthSegs)
 RadiusSegment = Array{Float64}(CoasterLengthSegs)
+
+
+NumArcs = 4
+mutable struct Cst
+  Radius::Float64
+  XCtr::Float64
+  YCtr::Float64
+  BegXC::Float64
+  BegYC::Float64
+end
+
+coast =  Array{Cst}(NumArcs)
+
+for i = 1:2
+  coast[i] = Cst(16., 2., 3., 1., 6.)
+  coast[i] = Cst(16., 2., 3., 1., 6.)
+end
+
+
+@show(coast[1].Radius)
+coast[1].Radius = 101.
+@show(coast[1].Radius)
+using DataFrames
+SourceFile = "c:\\ArchieCoaster\\ArcData.csv"
+df = readtable(SourceFile, header=true)
+numrows = nrow(df)
+@show(df)
+println("  ")
+#for i =1:numrows
+for i =1:4
+  #-- get the data out of the data frame
+  rad = df[i, :Radius]
+  ang1 = df[i, :BegAng]
+  ang2 = df[i, :EndAng]
+  x1 = df[i, :BegX]
+  x2 = df[i, :EndX]
+  y1 = df[i, :BegY]
+  y2 = df[i, :EndY]
+  xc = df[i, :XCen]
+  yc = df[i, :YCen]
+  if i == 1
+    #-- calc p1 and p2
+    x1 = xc + rad * cosd(ang1)
+    x2 = xc + rad * cosd(ang2)
+    y1 = yc + rad * sind(ang1)
+    y2 = yc + rad * sind(ang2)
+    #-- put p1 and p2 back in data frame
+    df[i, :BegX] = x1
+    df[i, :BegY] = y1
+    df[i, :EndX] = x2
+    df[i, :EndY] = y2
+    #-- put p2 in next arc as p1
+    df[i+1, :BegX] = x2
+    df[i+1, :BegY] = y2
+    
+  end
+  if i > 1
+    #-- assume a longer radius
+    #-- calc new center of radius
+    xc = x1 - rad * cosd(ang1)
+    yc = y1 - rad * sind(ang1)
+    df[i, :XCen] = xc
+    df[i, :YCen] = yc
+    
+    x2 = xc + rad * cosd(ang2)
+    y2 = yc + rad * sind(ang2)
+    #-- put p2 back in data frame
+    df[i, :EndX] = x2
+    df[i, :EndY] = y2
+    #-- put p2 in next arc as p1
+    df[i+1, :BegX] = x2
+    df[i+1, :BegY] = y2
+  
+  end
+  
+end
+@show(df)
+println(" ")
+
+
+error("dizzy")
+
+
 
 # fill the x values of XC
 for i = 1:CoasterLengthFt
