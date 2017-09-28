@@ -1,5 +1,5 @@
 # coaster.jl
-# 09/26/2017
+# 09/28/2017
 
 #=
 Computes forces on multihill roller coaster
@@ -9,33 +9,9 @@ loops in track
 twists in track
 TODO:
 arc segments
-------------
-constants that apply to everything
-----------------------------------
-MinRadius::Float64  - the minimum allowed radius [ft]
-SegsPerDeg:Int      - number of segments per degree of arc
-each X
----------------------------------------------------
-ArcNumber::Int   -- number to ID the segment [1 .. n]
-Radius::Float64  -- radius of arc [ft]
-XCtr::Float64 -- x coor of center of radius [ft]
-YCtr::Float64 -- y coor of center of radius [ft]
-RotationDir:Int  -- direction of rotation [1 = CW, -1 = CCW]  note: may not be needed?
-BegXC::Float64   -- beg x coor [ft]
-BegYC::Float64   -- beg y coor [ft]
-BegAng::Float64   -- begin angle of arc [deg]
-EndAng::Float64   -- end   angle of arc [deg]
-EndXC::Float64   -- end x coor [ft]
-EndYC::Float64   -- end y coor [ft]
-----------------------------------------------------
-segments correspond to 
-everything is arcs -> there , are not straight lines
-XCenter and YCenter are specified on first arc, and imputed thereafter
-ppNumArcSegs = max( 1, round(Int, ArcLength * SegsPerFt) - 1)
-wwDegInc = (EndAng - BegAng) / NumArcSegs
+NumArcSegs = max( 1, round(Int, ArcLength * SegsPerFt) - 1)
+DegInc = (EndAng - BegAng) / NumArcSegs
 =#
-
-
 
 module RollerCoaster
 const MassDensityAir = .0029   #-- density of air [ld/ft^3]
@@ -80,33 +56,16 @@ RadiusSegment = Array{Float64}(CoasterLengthSegs)
 
 
 NumArcs = 4
-mutable struct Cst
-  Radius::Float64
-  XCtr::Float64
-  YCtr::Float64
-  BegXC::Float64
-  BegYC::Float64
-end
-
-coast =  Array{Cst}(NumArcs)
-
-for i = 1:2
-  coast[i] = Cst(16., 2., 3., 1., 6.)
-  coast[i] = Cst(16., 2., 3., 1., 6.)
-end
 
 
-@show(coast[1].Radius)
-coast[1].Radius = 101.
-@show(coast[1].Radius)
+
 using DataFrames
 SourceFile = "c:\\ArchieCoaster\\ArcData.csv"
 df = readtable(SourceFile, header=true)
 numrows = nrow(df)
 @show(df)
 println("  ")
-#for i =1:numrows
-for i =1:4
+for i =1:numrows - 1
   #-- get the data out of the data frame
   rad = df[i, :Radius]
   ang1 = df[i, :BegAng]
@@ -149,6 +108,7 @@ for i =1:4
     #-- put p2 in next arc as p1
     df[i+1, :BegX] = x2
     df[i+1, :BegY] = y2
+    
   
   end
   
