@@ -1,6 +1,9 @@
 #DoCoaster
 include("coaster.jl")
-#using RollerCoaster
-#using Plots
-#x = 1:10; y = rand(10) # These are the plotting data
-#plot(XC,YC)
+using RollerCoaster
+bypass = true
+if !bypass
+  using Plots
+  lenXC = length(XC)
+  plot(XC[1: lenXC - 1],YC, size=(600,230) )  #-- plot whole vector except last point
+end

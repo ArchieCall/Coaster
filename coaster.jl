@@ -1,16 +1,15 @@
 # coaster.jl
-# 09/28/2017
+# 10/01/2017
 
 #=
 Computes forces on multihill roller coaster
 TODO:
+allow program to continue on and fill Slope and Radius vectors with a vel of 1.
+Arc 4 or 5 is wrong
+use ArcLength to generate DegInc to match desired SegsPerFt
 computer summary stats by each uphill and downhill
 loops in track
 twists in track
-TODO:
-arc segments
-NumArcSegs = max( 1, round(Int, ArcLength * SegsPerFt) - 1)
-DegInc = (EndAng - BegAng) / NumArcSegs
 =#
 
 module RollerCoaster
@@ -21,55 +20,39 @@ const FrontalArea = 15.        #-- front area of coaster [ft^2]
 const CfRunnerFriction = .015  #-- friction coef of runner wheels on track (null)
 const CstrLbs = 2000.          #-- weight of coaster cars and riders (lb)
 const NumHills = 3             #-- number of hills on the track 
-const SegsPerFt = 10           #-- number of segments per foot of horizontal distance
+const SegsPerFt = 2            #-- number of segments per foot of horizontal distance
 const WheelBaseFt = 8          #-- wheel base of coaster car must be integer
 const WheelBaseSegments = WheelBaseFt * SegsPerFt  #-- segments in wheel base
 const WheelBaseSegmentsHalf = Int(WheelBaseSegments * .5)  #-- one half wheel base
 
-#=
-. hills are symmetric left and right
-. hills begin and end at zero elevation 
-=#
-
-#-- setup the hill lengths and heights
-HillHeight = Array{Int}(NumHills) #-- vertical height of each hill
-HillHeight = [200, 150, 100]
-HillLength = Array{Int}(NumHills) #-- horizontal length of each hill
-HillLength = [400, 300, 200]
-
-#-- setup the offset array
-Offset = zeros(Int, NumHills) #-- beginning offset of a hill in segments
-Offset[1] = 0
-for o = 2:NumHills
-  Offset[o] = Offset[o-1] + (HillLength[o-1] * SegsPerFt)
-end
-@show(Offset)
-
-CoasterLengthFt = sum(HillLength)   #-- total length of all hills in coaster [ft]
-CoasterLengthSegs = CoasterLengthFt * SegsPerFt  #-- ditto [segments]
-
-#-- create XC, YC, SlopeSegment, RadiusSegment float arrays
-XC = Array{Float64}(CoasterLengthSegs)
-YC = Array{Float64}(CoasterLengthSegs)
-SlopeSegment = Array{Float64}(CoasterLengthSegs)
-RadiusSegment = Array{Float64}(CoasterLengthSegs)
-
-
-NumArcs = 4
-
-
-
 using DataFrames
 SourceFile = "c:\\ArchieCoaster\\ArcData.csv"
+#-- the last row of csv file is an EOF row => allows error free processing from 2nd last row
 df = readtable(SourceFile, header=true)
 numrows = nrow(df)
-@show(df)
+@show(df)   #--- show the data frame as specified by csv file
 println("  ")
-for i =1:numrows - 1
-  #-- get the data out of the data frame
+
+
+#-- infer missing data for all columns of data frame except EOF row
+for i =1:numrows - 1     #-- note excludes EOF row
+  #-- get the data out of data frame
   rad = df[i, :Radius]
   ang1 = df[i, :BegAng]
   ang2 = df[i, :EndAng]
+  revdeg = df[i, :RevDeg]
+  rotdir = df[i, :RotDir]
+
+  ang2 = ang1 + revdeg
+  if rotdir == "CW"
+    ang2 = ang1 - revdeg
+  end
+  if ang2 > 360.
+    ang2 -= 360.
+  end
+  if ang2 < 0.
+    ang2 += 360.
+  end 
   x1 = df[i, :BegX]
   x2 = df[i, :EndX]
   y1 = df[i, :BegY]
@@ -82,9 +65,10 @@ for i =1:numrows - 1
     x2 = xc + rad * cosd(ang2)
     y1 = yc + rad * sind(ang1)
     y2 = yc + rad * sind(ang2)
-    #-- put p1 and p2 back in data frame
+    #-- put p1 back in data frame
     df[i, :BegX] = x1
     df[i, :BegY] = y1
+    #-- put p2 back in data frame
     df[i, :EndX] = x2
     df[i, :EndY] = y2
     #-- put p2 in next arc as p1
@@ -109,93 +93,71 @@ for i =1:numrows - 1
     df[i+1, :BegX] = x2
     df[i+1, :BegY] = y2
     
+    
+  end
   
+end
+@show(df)  #--- data frame with all missing data inferred
+@goto 112
+#error("do fuzz")
+println(" ")
+
+#-- create XTemp, YTemp
+XTemp = Array{Float64}(10000)
+YTemp = Array{Float64}(10000)
+
+#-- fill the XC and YC vectors from the dataframe arcs
+SegsPerFt = 2
+Counter = 1
+for i =1:numrows - 1
+  Radius = df[i, :Radius]
+  BegAng = df[i, :BegAng]
+  EndAng = df[i, :EndAng]
+  RotateType = df[i, :RotDir]
+  xc = df[i, :XCen]
+  yc = df[i, :YCen]
+  
+  DiffAng = EndAng - BegAng
+  if RotateType == "CCW"
+    if DiffAng < 0.
+      DiffAng += 360.  #-- wrapped the 0. deg axis
+    end
+  end
+  if RotateType == "CW"
+    if DiffAng > 0.
+      DiffAng -= 360.  #-- wrapped the 0. deg axis
+    end
+  end
+  #ArcLength = 2 * pi * Radius * (DiffAng / 360.)
+  
+  NumArcSegs = max( 1, abs(round(Int, DiffAng * SegsPerFt)))
+  DegInc = DiffAng / NumArcSegs
+  @show(DegInc, NumArcSegs)
+  ThisDeg = BegAng
+  for i = 1:NumArcSegs
+    x2 = xc + Radius * cosd(ThisDeg)
+    y2 = yc + Radius * sind(ThisDeg)
+    @printf("i => %4i  deg => %8.4f  x2 => %8.4f  y2 => %8.4f\n", i, ThisDeg, x2, y2 )
+    XTemp[Counter] = x2
+    YTemp[Counter] = y2
+    ThisDeg +=  DegInc
+    Counter += 1
   end
   
 end
 @show(df)
-println(" ")
 
-
-error("dizzy")
-
-
-
-# fill the x values of XC
-for i = 1:CoasterLengthFt
-  for j = 1:SegsPerFt
-    k = (i-1) * SegsPerFt + j
-    XC[k] =  (k-1) / SegsPerFt
-  end
+#-- create XC, YC, SlopeSegment, RadiusSegment float arrays
+XC = Array{Float64}(Counter)
+YC = Array{Float64}(Counter)
+SlopeSegment = Array{Float64}(Counter)
+RadiusSegment = Array{Float64}(Counter)
+for i = 1:Counter
+  XC[i] = XTemp[i]
+  YC[i] = YTemp[i]
 end
 
-# calc the y values of the hills (YC)
-Counter = 0
-
-
-for h = 1:NumHills  #-- loop over each hill
-  @printf("Hill = %3i\n", h)
-  RadCirc = HillHeight[h] / 2
-  RadCircInt = round(Int, HillHeight[h] / 2)  
-  SemiCircSegs = RadCircInt * SegsPerFt    #-- number of segments in the radius
-  ycen = RadCirc * 1.                      #-- y center the same in all quadrants
-  fuzz = .00000001
-  
-  #-- uphill lower quadrant
-  println("got to uphill lower")
-  xcen = (Offset[h] / SegsPerFt) * 1. 
-  for i = 1:SemiCircSegs
-    Counter += 1
-    k = Offset[h] + i     #-- in segs
-    x = XC[k]
-    sqval = RadCirc^2 - (x - xcen)^2 + fuzz
-    y = ycen - sqrt(sqval)
-    YC[k] = y
-    #@show(k, RadCirc, x, xcen, y, ycen, sqval)
-    #error("stop at first uphill")
-  end
-  
-  #-- uphill upper quadrant
-  println("got to uphill upper")
-  xcen = (Offset[h] / SegsPerFt) * 1. + (2. * RadCirc)
-  for i = 1:SemiCircSegs
-    Counter += 1
-    k = Offset[h] + (RadCircInt * SegsPerFt) + i
-    x = XC[k]
-    juu = RadCirc^2 - (x - xcen)^2 + fuzz
-    #@show(k, RadCirc, x, xcen)
-    #@show(juu)
-    y = sqrt(juu) + ycen
-    #error("uuu")
-    YC[k] = y
-  end
-  
-  #-- downhill upper quadrant
-  println("got to downhill upper")
-  xcen = (Offset[h] / SegsPerFt) * 1. + (2. * RadCirc)
-  for i = 1:SemiCircSegs
-    Counter += 1
-    k = Offset[h] + (2 * RadCircInt * SegsPerFt) + i
-    x = XC[k]
-    #@show(k, RadCirc, x, xcen)
-    y = sqrt(RadCirc^2 - (x - xcen)^2 + fuzz) + ycen
-    YC[k] = y
-  end
-  
-  #-- downhill lower quadrant
-  println("got to downhill lower")
-  xcen = (Offset[h] / SegsPerFt) * 1. + (4. * RadCirc)
-  for i = 1:SemiCircSegs
-    Counter += 1
-    k = Offset[h] + (3 * RadCircInt * SegsPerFt) + i
-    x = XC[k]
-    #@show(k, RadCirc, x, xcen)
-    y = -sqrt(RadCirc^2 - (x - xcen)^2 + fuzz) + ycen
-    YC[k] = y
-  end
-end
-
-
+#error("dizzy")
 
 @show(Counter)
 
@@ -250,7 +212,7 @@ for k = WheelBaseSegmentsHalf+1:Counter-WheelBaseSegmentsHalf
   #@printf("x => %8.4f  y => %8.4f   slope => %9.5f\n", XC[k], YC[k], SlopeSegment[k])
 end
 
-for i = 1:10:9000
+for i = 1:10:Counter
   @printf("x = %8.3f y = %8.3f slope = %8.3f radius = %8.3f\n", 
   XC[i], YC[i], SlopeSegment[i], RadiusSegment[i])
 end
@@ -302,9 +264,12 @@ function Forces(x_index::Int, Vel::Float64, ShowOutput::Bool)
   
   InsideSqrt = Vel^2 +(2. * Acc * Distance )
   if InsideSqrt < 0.
-    error("Error velocity on uphill reached zero!")
+    #error("Error velocity on uphill reached zero!")
+    #println("Error velocity on uphill reached zero!")
+    NewVel = 1.
+  else
+    NewVel = sqrt(InsideSqrt)
   end
-  NewVel = sqrt(InsideSqrt)
   TravelTime = (2. * Distance) / (Vel + NewVel)  #-- time to travel from this point to next point
   if ShowOutput
     println(" ")
@@ -317,7 +282,7 @@ end
 
 #--- run the simulation of roller coaster
 BeginXFt = 200     #-- beginning hor coor
-EndXFt =   890       #-- ending hor coor
+EndXFt =   round(Int, (Counter / SegsPerFt)) - 10       #-- ending hor coor
 BeginVel = 10.0    #-- initial velocity at beginning coor
 BeginPoint = BeginXFt * SegsPerFt  #-- beginning point in segments
 EndPoint = EndXFt * SegsPerFt      #-- ending point in segments
