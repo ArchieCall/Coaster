@@ -1,12 +1,14 @@
-# coaster.jl
-# 10/01/2017
+# Coaster.jl
+# 10/03/2017
 
 #=
 Computes forces on multihill roller coaster
 TODO:
-allow program to continue on and fill Slope and Radius vectors with a vel of 1.
-Arc 4 or 5 is wrong
-use ArcLength to generate DegInc to match desired SegsPerFt
+allow RevDeg or EndDeg but not both to be 999.
+.. RevDeg of 999. -> use EndDeg
+.. EndDeg of 999. -> use RevDeg
+cannot tell the basic plan from the numbers
+why is segs plotted only 1877?
 computer summary stats by each uphill and downhill
 loops in track
 twists in track
@@ -26,85 +28,117 @@ const WheelBaseSegments = WheelBaseFt * SegsPerFt  #-- segments in wheel base
 const WheelBaseSegmentsHalf = Int(WheelBaseSegments * .5)  #-- one half wheel base
 
 using DataFrames
+
+#--- section for one line utility functions ----
+RInt(x::AbstractFloat) = round(Int, x)  #-- convert x to a rounded integer
+
+#---- arc data csv file to drive each individual arc
 SourceFile = "c:\\ArchieCoaster\\ArcData.csv"
-#-- the last row of csv file is an EOF row => allows error free processing from 2nd last row
+#-- the last row of csv file is an EOF row => allows forward dump spot for 2nd last row
 df = readtable(SourceFile, header=true)
 numrows = nrow(df)
 @show(df)   #--- show the data frame as specified by csv file
 println("  ")
 
-
 #-- infer missing data for all columns of data frame except EOF row
-for i =1:numrows - 1     #-- note excludes EOF row
+#------- degree columns -------------
+#-- BegDeg, RevDeg, EndDeg - missing data is denoted by 999.
+#-- first row must have non missing BegDeg
+#-- all rows must have RevDeg or EndDeg as missing but not both
+#---------------------------------------------------------------
+#-- Radius - must be non missing on all rows except last row
+#-- XCen, YCen must be non missing on first row and missing on subsequent rows
+#-- BegX, BegY, EndX, EndY must be missing on all rows
+#-- RotDir must be either CW or CCW for all rows except last row
+#-- RotDir must EOF on last row
+for i = 1:numrows - 1 
   #-- get the data out of data frame
   rad = df[i, :Radius]
   ang1 = df[i, :BegAng]
+  
   ang2 = df[i, :EndAng]
+  
   revdeg = df[i, :RevDeg]
   rotdir = df[i, :RotDir]
-
-  ang2 = ang1 + revdeg
-  if rotdir == "CW"
-    ang2 = ang1 - revdeg
+  
+  if i > 1  #---- only rows after first row
+    ang1 = df[i-1, :EndAng]  #-- get ang1 from preceeding row EndAng
+    if rotdir != df[i-1, :RotDir]
+      #-- rotation direction is reversed from preceeding row -> backup ang by 180 deg
+      ang1 -= 180.
+      if ang1 < 0.
+        ang1 += 360. #-- recode angle if negative
+      end
+    end
+    df[i, :BegAng] = ang1   #-- put reversed ang1 back into data frame
   end
-  if ang2 > 360.
-    ang2 -= 360.
+  
+  ang2 = ang1 + revdeg  #-- ang2 is intially inferred from ang1 and its rotation deg
+  if rotdir == "CW"
+    ang2 = ang1 - revdeg  #-- if rotation is negative (ie. CW) then reverse rotation deg
+  end
+  if ang2 >= 360.
+    ang2 -= 360.  #-- recode angle if gte 360. 
   end
   if ang2 < 0.
-    ang2 += 360.
-  end 
-  x1 = df[i, :BegX]
-  x2 = df[i, :EndX]
-  y1 = df[i, :BegY]
-  y2 = df[i, :EndY]
+    ang2 += 360.  #-- recode angle if lt 0.
+  end
+  df[i, :EndAng] = ang2 
+  
+  #-- get the center coor,
   xc = df[i, :XCen]
   yc = df[i, :YCen]
-  if i == 1
-    #-- calc p1 and p2
+  
+  #-- get the beg coor.
+  x1 = df[i, :BegX]
+  y1 = df[i, :BegY]
+  
+  if i == 1   #-- for first row
+    #-- calc beg and end points based on center coor. and radius
     x1 = xc + rad * cosd(ang1)
     x2 = xc + rad * cosd(ang2)
     y1 = yc + rad * sind(ang1)
     y2 = yc + rad * sind(ang2)
-    #-- put p1 back in data frame
+    
+    #-- put beg and end points back into data frame of first
     df[i, :BegX] = x1
     df[i, :BegY] = y1
-    #-- put p2 back in data frame
     df[i, :EndX] = x2
     df[i, :EndY] = y2
-    #-- put p2 in next arc as p1
+    
+    #-- put end point into next row beg point of data frame
     df[i+1, :BegX] = x2
     df[i+1, :BegY] = y2
     
   end
+
   if i > 1
-    #-- assume a longer radius
-    #-- calc new center of radius
+    #-- center of arc must be inferred
     xc = x1 - rad * cosd(ang1)
     yc = y1 - rad * sind(ang1)
+    #-- put new center back into data frame
     df[i, :XCen] = xc
     df[i, :YCen] = yc
     
+    #-- calc end point
     x2 = xc + rad * cosd(ang2)
     y2 = yc + rad * sind(ang2)
-    #-- put p2 back in data frame
+    #-- put end point back into data frame
     df[i, :EndX] = x2
     df[i, :EndY] = y2
-    #-- put p2 in next arc as p1
+    #-- put end point into next row data frame as beg point
     df[i+1, :BegX] = x2
     df[i+1, :BegY] = y2
-    
-    
   end
   
 end
 @show(df)  #--- data frame with all missing data inferred
-@goto 112
-#error("do fuzz")
+#error("stop after initial data frame processing")  #-- temp forced error
 println(" ")
 
 #-- create XTemp, YTemp
-XTemp = Array{Float64}(10000)
-YTemp = Array{Float64}(10000)
+XTemp = Array{Float64}(100000)
+YTemp = Array{Float64}(100000)
 
 #-- fill the XC and YC vectors from the dataframe arcs
 SegsPerFt = 2
@@ -128,9 +162,12 @@ for i =1:numrows - 1
       DiffAng -= 360.  #-- wrapped the 0. deg axis
     end
   end
-  #ArcLength = 2 * pi * Radius * (DiffAng / 360.)
   
-  NumArcSegs = max( 1, abs(round(Int, DiffAng * SegsPerFt)))
+  ArcLength = 2 * pi * Radius * (DiffAng / 360.)
+  
+  #NumArcSegs = max( 1, abs(RInt(DiffAng * SegsPerFt)))
+  NumArcSegs = max( 1, abs(RInt(ArcLength * SegsPerFt)))
+
   DegInc = DiffAng / NumArcSegs
   @show(DegInc, NumArcSegs)
   ThisDeg = BegAng
@@ -152,9 +189,19 @@ XC = Array{Float64}(Counter)
 YC = Array{Float64}(Counter)
 SlopeSegment = Array{Float64}(Counter)
 RadiusSegment = Array{Float64}(Counter)
+#-- arbitrary max and min of coor's
+MaxXC = -50_000.
+MaxYC = -50_000.
+MinXC = 50_000.
+MinYC = 50_000.
 for i = 1:Counter
   XC[i] = XTemp[i]
   YC[i] = YTemp[i]
+  #-- get new mins or maxs of coor's
+  XC[i] >= MaxXC && (MaxXC = XC[i])
+  YC[i] >= MaxYC && (MaxYC = YC[i])
+  XC[i] <= MinXC && (MinXC = XC[i])
+  YC[i] <= MinYC && (MinYC = YC[i])
 end
 
 #error("dizzy")
@@ -212,7 +259,7 @@ for k = WheelBaseSegmentsHalf+1:Counter-WheelBaseSegmentsHalf
   #@printf("x => %8.4f  y => %8.4f   slope => %9.5f\n", XC[k], YC[k], SlopeSegment[k])
 end
 
-for i = 1:10:Counter
+for i = 1:10:Counter  #-- only put every 10th detail point in array
   @printf("x = %8.3f y = %8.3f slope = %8.3f radius = %8.3f\n", 
   XC[i], YC[i], SlopeSegment[i], RadiusSegment[i])
 end
@@ -282,7 +329,7 @@ end
 
 #--- run the simulation of roller coaster
 BeginXFt = 200     #-- beginning hor coor
-EndXFt =   round(Int, (Counter / SegsPerFt)) - 10       #-- ending hor coor
+EndXFt =   RInt(Counter / SegsPerFt) - 10       #-- ending hor coor
 BeginVel = 10.0    #-- initial velocity at beginning coor
 BeginPoint = BeginXFt * SegsPerFt  #-- beginning point in segments
 EndPoint = EndXFt * SegsPerFt      #-- ending point in segments
@@ -307,6 +354,7 @@ for l = BeginPoint:EndPoint
   TotDistance += d
   TotTime += t
 end
-@show(TotDistance, TotTime, NewVel)
-export XC, YC
+@show(df)
+@show(BeginPoint, EndPoint, TotDistance, TotTime, NewVel)
+export XC, YC, Counter, MaxXC, MaxYC, MinXC, MinYC
 end

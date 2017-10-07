@@ -1,9 +1,12 @@
 #DoCoaster
-include("coaster.jl")
+include("Coaster.jl")
 using RollerCoaster
-bypass = true
+bypass = false
 if !bypass
   using Plots
   lenXC = length(XC)
-  plot(XC[1: lenXC - 1],YC, size=(600,230) )  #-- plot whole vector except last point
+  @show(Counter, lenXC)
+  XScale = MaxXC - MinXC
+  YScale = (MaxYC - MinYC) * 1.1
+  plot(XC[1: lenXC - 1],YC, size=(XScale,YScale) )  #-- plot whole vector except last point
 end
