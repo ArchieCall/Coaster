@@ -1,3 +1,7 @@
-(1) Iter>1 Loc>Init gg = 1  {13}
-(1) Iter>4 Loc>Init gg = 4  {13}
-(1) Iter>1004 Loc>Init gg = 1004  {13}
+(1) Iter>1 Loc>Init  gp => 77    {l1}
+(1) Iter>2 Loc>Init  gp => 77    {l1}
+(1) Iter>3 Loc>Init  gp => 77    {l1}
+(1) Iter>4 Loc>Init  gp => 77    {l1}
+(1) Iter>5 Loc>Init  gp => 77    {l1}
+(1) Iter>6 Loc>Init  gp => 77    {l1}
+(1) Iter>7 Loc>Init  gp => 77    {l1}
