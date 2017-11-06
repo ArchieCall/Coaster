@@ -1,23 +1,7 @@
-using BenchmarkTools
-macro fastrand(b, n)
-  return :( round(Int, ($n - $b + 1) * rand(), RoundUp) + $b )
+#using BenchmarkTools
+xx = 1.
+for i = 1:100
+  xx = xx/i
+  y = xx^xx
+  @show(xx,y)
 end
-
-speedy = function()
-    jake = @fastrand(2, 11)
-  return
-end
-speedy()
-@benchmark speedy()
-
-weedy = function()
-  jack = rand(1:10)
-end
-
-weedy()
-@benchmark weedy()
-
-#-- noop by archie
-#---- more
-  
-

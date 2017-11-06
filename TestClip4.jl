@@ -55,4 +55,6 @@ println("MethodB performance")
 MethodB(10)  #-- warm up
 @benchmark MethodB(10)  #-- time with benchmark
 @benchmark MethodB(100_000)  #-- time with benchmark
+frank = 5
+println("you done")
 
